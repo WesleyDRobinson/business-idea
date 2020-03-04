@@ -1,0 +1,25 @@
+{
+  "name": "kbi",
+  "alias": [],
+  "version": 2,
+  "builds": [
+    {
+      "src": "public/**/*",
+      "use": "@now/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(assets|css|js|images|fonts)/(.*)",
+      "dest": "/public/$1/$2"
+    },
+    {
+      "src": "/robots.txt",
+      "dest": "/public/robots.txt"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/index.html"
+    }
+  ]
+}
