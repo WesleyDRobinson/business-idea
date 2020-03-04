@@ -10,12 +10,12 @@ define('custom-header', {
   render() {
     const header = `pa3 flex justify-between items-center bg-${headerColor}`
     const left = ``
-    const h1 = `f4 f3-ns fw6 pl2 pv1`
+    const h1 = `f4 f3-m f2-l fw6 pl2 pv1`
 
     const link = `link pointer dark-green`
 
     const navLinkList = `list flex f6`
-    const navLink = `${link} ttu f7 ph2 ph3-ns ph4-ns pv2`
+    const navLink = `${link} ttu f7 f5-ns ph2 ph3-ns ph4-ns pv2`
 
     return render(this.element, html`
 <header class=${header} id="header">
