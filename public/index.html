@@ -10,23 +10,31 @@
     <link rel="icon" href="">
 
     <!-- CSS toolkits -->
-    <link href="https://unpkg.com/tachyons@4.9.0/css/tachyons.min.css" rel="stylesheet">
+    <link href="css/tachyons.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.5.2/animate.min.css" rel="stylesheet">
+    <link href="css/custom.css" rel="stylesheet">
 
-    <!-- hyperHTML-element for building web components -->
+    <!-- customElements polyfill -->
     <script>window.customElements || document.write('<script src="//cdnjs.cloudflare.com/ajax/libs/document-register-element/1.8.1/document-register-element.js"><' + '/script>')</script>
-    <script src="//unpkg.com/hyperhtml-element@latest/min.js"></script>
+    <!-- hyperHTML-element, lighterhtml, wickedElements -->
+    <script src="js/lib/hyperhtml-element.min.js"></script>
+    <script src="js/lib/lighterhtml.min.js"></script>
+    <script src="js/lib/wicked-elements.min.js"></script>
+
+    <!-- page.js express-like routing for the browser -->
+    <script src="js/lib/page.mjs" type="module"></script>
 
     <noscript>
-        For full functionality at wesley.tech, it is necessary to enable JavaScript.
+        For full functionality at this site, it is necessary to enable JavaScript.
         Follow these <a href="https://www.enable-javascript.com/" target="_blank">
         instructions to enable JavaScript in your web browser</a>.
     </noscript>
 </head>
 <body class="vh-100 avenir near-black bg-near-white">
 
-<app-shell></app-shell>
+<!--<app-shell></app-shell>-->
 
-<script src="js/bundle.js"></script>
+<!--<script src="js/components/app-shell.js" type="module"></script>-->
+<script src="js/routing.js" type="module"></script>
 </body>
 </html>

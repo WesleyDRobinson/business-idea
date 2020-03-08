@@ -1,5 +1,5 @@
-import { render, html } from 'lighterhtml';
-import { define, get, upgrade, whenDefined } from 'wicked-elements';
+const { render, html } = lighterhtml
+const { define, get, upgrade, whenDefined } = wickedElements
 
 define('contact-us', {
   init() {
@@ -36,7 +36,7 @@ define('contact-us', {
 
     const [,input] = e.target
     if (!input.value) return
-    const slackUrl = 'https://hooks.slack.com/services/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'
+    const slackUrl = 'WEBHOOK_URL_REMOVEDppW1teNi5x8A2olafZsL4bL'
     const body = JSON.stringify({ text: `${input.value} wants your newsletter` })
 
     const send = true

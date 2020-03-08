@@ -1,5 +1,5 @@
-import { render, html } from 'lighterhtml';
-import { define, get, upgrade, whenDefined } from 'wicked-elements';
+const { render, html } = lighterhtml
+const { define, get, upgrade, whenDefined } = wickedElements
 
 define('about-us', {
   init() {

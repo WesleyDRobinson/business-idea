@@ -1,9 +1,8 @@
-import { define, get, upgrade, whenDefined } from 'wicked-elements';
-import { render, html } from 'lighterhtml'
-
-import './contact-us'
-import './about-us'
-import './custom-header'
+import '/js/components/custom-header.js';
+import '/js/components/contact-us.js';
+import '/js/components/about-us.js';
+const { render, html } = lighterhtml
+const { define, get, upgrade, whenDefined } = wickedElements
 
 const backgroundColor = 'near-white'
 
