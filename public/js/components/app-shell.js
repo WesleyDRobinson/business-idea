@@ -5,21 +5,18 @@ import '/js/components/about-us.js';
 const { render, html } = lighterhtml
 const { define } = wickedElements
 
-const backgroundColor = 'near-white'
-
 define('app-shell', {
   init() {
-    this.element.className = `db bg-${backgroundColor}`
-
     this.render()
   },
 
   render() {
-    const main = `ph2 ph4-ns bg-${backgroundColor}`
+    const main = `ph2 ph4-ns bg-near-white animated fadeIn`
+    const bgImageClass = `vh-75 w-100 cover`
     const imageTextOverlay = `h-100 flex flex-column justify-around`
 
-    const l = 'w1 white-90'
-    const line = `f1 fw7 ttu tracked lh-title flex justify-around `
+    const l = 'w1'
+    const line = `ttu tracked lh-title white-90 f2 f1-ns fw7 flex justify-around`
 
     const { medium, large } = this.media
 
@@ -43,7 +40,8 @@ define('app-shell', {
 <custom-header></custom-header>
   
 <main class=${main}>
-  <div class="vh-75 w-100 cover" style=${bgImageFirst}>
+
+  <div class=${bgImageClass} style=${bgImageFirst}>
     <div class=${imageTextOverlay}>
       <div class=${line}><span class=${l}>b</span><span class=${l}>u</span><span class=${l}>s</span><span class=${l}>i</span></div>
       <div class=${line}><span class=${l}>n</span><span class=${l}>e</span><span class=${l}>s</span><span class=${l}>s</span></div>
@@ -53,10 +51,9 @@ define('app-shell', {
   
   <about-us></about-us>
   
-  <div class="vh-75 w-100 cover" style=${bgImageSecond}></div>
+  <div class=${bgImageClass} style=${bgImageSecond}></div>
   
   <contact-us></contact-us>
-
 </main>
 `)
   },
