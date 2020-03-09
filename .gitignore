@@ -1,6 +1,2 @@
-# modules
 node_modules
 .DS_Store
-
-# bundles & secrets
-public/js/bundle.js
