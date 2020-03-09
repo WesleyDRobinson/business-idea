@@ -21,7 +21,7 @@ define('custom-header', {
       { text: 'Home', path: '/' },
       { text: 'About', path: "/about", },
       { text: 'Contact', path: "/contact", },
-      { text: 'TOS', path: "/tos", },
+      { text: 'Terms', path: "/tos", },
     ]
 
     return render(this.element, html`
