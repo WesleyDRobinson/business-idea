@@ -111,38 +111,4 @@ function changeMainColors(e) {
   // add targetedColors to main
   const targetTheme = e.target.getAttribute('data-theme')
   main.className += themes[targetTheme]
-
-  // extra
-  const colorsO = {
-    'dark-red': true,
-    'red': true,
-    'light-red': true,
-    'orange': true,
-    'gold': true,
-    'yellow': true,
-    'light-yellow': true,
-    'purple': true,
-    'light-purple': true,
-    'dark-pink': true,
-    'hot-pink': true,
-    'pink': true,
-    'light-pink': true,
-    'dark-green': true,
-    'green': true,
-    'light-green': true,
-    'navy': true,
-    'dark-blue': true,
-    'blue': true,
-    'light-blue': true,
-    'lightest-blue': true,
-    'washed-blue': true,
-    'washed-green': true,
-    'washed-yellow': true,
-    'washed-red': true,
-  }
-
-  function colorsOIncludes(c) {
-    let test = c.startsWith('bg-') ? c.slice(3) : c
-    return colorsO.includes(test)
-  }
 }

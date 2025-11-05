@@ -5,9 +5,9 @@
   "author": "wesley <wesleyr@tuta.io>",
   "license": "ISC",
   "scripts": {
-    "deploy": "now",
-    "dev": "now dev",
-    "release": "yarn version && now alias"
+    "deploy": "vercel",
+    "dev": "vercel dev",
+    "release": "yarn version && vercel alias"
   },
   "dependencies": {
     "hyperhtml-element": "^3.12.2",

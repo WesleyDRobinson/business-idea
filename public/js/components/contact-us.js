@@ -1,5 +1,5 @@
 const { render, html } = lighterhtml
-const { define, get, upgrade, whenDefined } = wickedElements
+const { define } = wickedElements
 
 define('contact-us', {
   init() {
@@ -36,18 +36,9 @@ define('contact-us', {
 
     const [,input] = e.target
     if (!input.value) return
-    const slackUrl = 'WEBHOOK_URL_REMOVEDppW1teNi5x8A2olafZsL4bL'
-    const body = JSON.stringify({ text: `${input.value} wants your newsletter` })
 
-    const send = true
-    if (send) {
-      fetch(slackUrl, {
-        method: 'POST',
-        body,
-      })
-        .then(r => console.log(r))
-        .catch(e => console.error(e))
-      e.target.reset()
-    }
+    // TODO: Configure webhook URL via environment variable
+    console.log('Newsletter signup:', input.value)
+    e.target.reset()
   }
 })

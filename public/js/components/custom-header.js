@@ -1,5 +1,5 @@
 const { render, html } = lighterhtml
-const { define, get, upgrade, whenDefined } = wickedElements
+const { define } = wickedElements
 
 const headerColor = 'near-white'
 

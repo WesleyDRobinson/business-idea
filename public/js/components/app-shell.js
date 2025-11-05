@@ -60,7 +60,7 @@ define('app-shell', {
 
   get media() {
     return {
-      small: window.matchMedia('(max-width: 600px').matches,
+      small: window.matchMedia('(max-width: 600px)').matches,
       medium: window.matchMedia('(min-width: 600px)').matches,
       large: window.matchMedia('(min-width: 1200px)').matches,
     }
