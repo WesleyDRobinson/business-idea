@@ -20,6 +20,7 @@ define('custom-header', {
     const links = [
       { text: 'Home', path: '/' },
       { text: 'About', path: "/about", },
+      { text: 'Travel', path: "/luxury-travel", },
       { text: 'Contact', path: "/contact", },
       { text: 'Terms', path: "/tos", },
     ]

@@ -6,6 +6,9 @@ const { render, html } = lighterhtml
 // regexp for "tos" or "terms-of-service", case insensitive
 page(/tos|terms-of-service/i, terms)
 
+// luxury travel page
+page(/luxury-travel|travel/i, luxuryTravel)
+
 // old page style
 page('*', initialize)
 page(/about/i, about)
@@ -39,6 +42,11 @@ function contact() {
 async function terms() {
   const { showTerms } = await import('/js/pages/terms.js');
   showTerms()
+}
+
+async function luxuryTravel() {
+  const { showLuxuryTravel } = await import('/js/pages/luxury-travel.js');
+  showLuxuryTravel()
 }
 
 function scrollIntoView(id) {
