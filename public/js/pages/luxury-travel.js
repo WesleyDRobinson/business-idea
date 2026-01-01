@@ -4,11 +4,11 @@ import '/js/components/custom-header.js'
 // TRIP STATE MANAGEMENT
 // ============================================================================
 
-const STORAGE_KEY = 'luxuryTripBuilder_v2'
+const STORAGE_KEY = 'luxuryTripBuilder_v3'
 
 const createTripState = () => ({
   name: '',
-  stops: [], // Each stop has: destination + optional hotel + dates
+  stops: [],
   createdAt: Date.now(),
   updatedAt: Date.now()
 })
@@ -17,12 +17,24 @@ let tripState = loadTrip()
 let undoStack = []
 let toastTimeout = null
 
+// Live data caches
+let liveHotelsCache = new Map() // city -> { hotels, timestamp }
+let liveRoutesCache = new Map() // from-to -> { routes, timestamp }
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
 function loadTrip() {
   try {
+    // Check for shared trip in URL
+    const params = new URLSearchParams(window.location.search)
+    const sharedId = params.get('trip')
+    if (sharedId) {
+      // Will be loaded asynchronously
+      return createTripState()
+    }
+
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       const parsed = JSON.parse(saved)
-      // Migration from v1
       if (parsed.destinations && !parsed.stops) {
         return migrateFromV1(parsed)
       }
@@ -64,7 +76,87 @@ function generateId() {
 }
 
 // ============================================================================
-// CURATED DATA (kept as suggestions)
+// API FUNCTIONS
+// ============================================================================
+
+async function fetchLiveHotels(city) {
+  const cacheKey = city.toLowerCase()
+  const cached = liveHotelsCache.get(cacheKey)
+
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data
+  }
+
+  try {
+    const res = await fetch(`/api/hotels?city=${encodeURIComponent(city)}&limit=12`)
+    const data = await res.json()
+
+    liveHotelsCache.set(cacheKey, { data, timestamp: Date.now() })
+    return data
+  } catch (e) {
+    console.error('Failed to fetch hotels:', e)
+    return { hotels: [], error: 'Failed to fetch hotels' }
+  }
+}
+
+async function fetchLiveRoutes(from, to) {
+  const cacheKey = `${from.toLowerCase()}-${to.toLowerCase()}`
+  const cached = liveRoutesCache.get(cacheKey)
+
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data
+  }
+
+  try {
+    const res = await fetch(`/api/routes?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+    const data = await res.json()
+
+    liveRoutesCache.set(cacheKey, { data, timestamp: Date.now() })
+    return data
+  } catch (e) {
+    console.error('Failed to fetch routes:', e)
+    return { routes: [], error: 'Failed to fetch routes' }
+  }
+}
+
+async function shareTrip() {
+  try {
+    const res = await fetch('/api/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tripState)
+    })
+    const data = await res.json()
+
+    if (data.id) {
+      const shareUrl = `${window.location.origin}${data.url}`
+      await navigator.clipboard.writeText(shareUrl)
+      return { success: true, url: shareUrl }
+    }
+    return { success: false, error: data.error }
+  } catch (e) {
+    console.error('Failed to share trip:', e)
+    return { success: false, error: 'Failed to create share link' }
+  }
+}
+
+async function loadSharedTrip(shareId) {
+  try {
+    const res = await fetch(`/api/share?id=${encodeURIComponent(shareId)}`)
+    const data = await res.json()
+
+    if (data.trip) {
+      return data.trip
+    }
+    return null
+  } catch (e) {
+    console.error('Failed to load shared trip:', e)
+    return null
+  }
+}
+
+// ============================================================================
+// CURATED DATA (fallback suggestions)
 // ============================================================================
 
 const curatedDestinations = [
@@ -106,6 +198,35 @@ export const showLuxuryTravel = function showLuxuryTravel() {
 
   function rerender() {
     renderPage()
+  }
+
+  // Check for shared trip on load
+  async function checkForSharedTrip() {
+    const params = new URLSearchParams(window.location.search)
+    const sharedId = params.get('trip')
+
+    if (sharedId) {
+      showToast('Loading shared trip...', 'info')
+      const shared = await loadSharedTrip(sharedId)
+
+      if (shared) {
+        tripState = {
+          ...createTripState(),
+          ...shared,
+          stops: shared.stops.map(s => ({ ...s, id: s.id || generateId() }))
+        }
+        saveTrip()
+
+        // Clear URL params
+        window.history.replaceState({}, '', window.location.pathname)
+
+        showToast(`Loaded "${shared.name || 'Shared Trip'}"`, 'success')
+        panelExpanded = true
+        rerender()
+      } else {
+        showToast('Could not load shared trip', 'error')
+      }
+    }
   }
 
   // ============================================================================
@@ -219,6 +340,20 @@ export const showLuxuryTravel = function showLuxuryTravel() {
     showToast('Trip cleared', 'success')
   }
 
+  async function handleShare() {
+    if (tripState.stops.length === 0) {
+      showToast('Add some stops first!', 'info')
+      return
+    }
+
+    const result = await shareTrip()
+    if (result.success) {
+      showToast('Share link copied to clipboard!', 'success')
+    } else {
+      showToast(result.error || 'Failed to share', 'error')
+    }
+  }
+
   // ============================================================================
   // TOAST NOTIFICATIONS
   // ============================================================================
@@ -235,7 +370,8 @@ export const showLuxuryTravel = function showLuxuryTravel() {
     toast.style.cssText = 'animation: slideUp 0.3s ease; z-index: 9999;'
 
     const bgColor = type === 'success' ? 'bg-dark-green near-white' :
-                    type === 'undo' ? 'bg-gold near-black' : 'bg-near-black near-white'
+                    type === 'undo' ? 'bg-gold near-black' :
+                    type === 'error' ? 'bg-dark-red near-white' : 'bg-near-black near-white'
     toast.className += ` ${bgColor}`
 
     const textSpan = document.createElement('span')
@@ -278,11 +414,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
           text += `${stop.destination.description}\n\n`
         }
         if (stop.hotel) {
-          text += `**Hotel:** ${stop.hotel.name}${stop.hotel.location ? ` (${stop.hotel.location})` : ''}\n`
-          if (stop.hotel.description) {
-            text += `${stop.hotel.description}\n`
-          }
-          text += '\n'
+          text += `**Hotel:** ${stop.hotel.name}${stop.hotel.location ? ` (${stop.hotel.location})` : ''}\n\n`
         }
       })
     }
@@ -316,10 +448,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
         .stop h2 { margin: 0 0 5px 0; color: #1a472a; }
         .dates { color: #666; font-size: 14px; margin-bottom: 10px; }
         .hotel { margin-top: 15px; padding: 10px; background: white; border-radius: 4px; }
-        .hotel h3 { margin: 0 0 5px 0; font-size: 16px; }
         .route { margin: 10px 0; padding: 10px; background: #e8f4ea; border-radius: 4px; }
-        a { color: #1a472a; }
-        @media print { body { margin: 20px; } }
       </style></head><body>
       <h1>${tripState.name || 'My Luxury Trip'}</h1>`
 
@@ -327,13 +456,12 @@ export const showLuxuryTravel = function showLuxuryTravel() {
       h += `<div class="stop">
         <h2>${i + 1}. ${stop.destination.name}</h2>
         ${stop.startDate || stop.endDate ? `<p class="dates">${stop.startDate || '?'} → ${stop.endDate || '?'}</p>` : ''}
-        ${stop.destination.description ? `<p>${stop.destination.description}</p>` : ''}
-        ${stop.hotel ? `<div class="hotel"><h3>🏨 ${stop.hotel.name}</h3><p>${stop.hotel.location || ''}</p></div>` : ''}
+        ${stop.hotel ? `<div class="hotel"><strong>Hotel:</strong> ${stop.hotel.name}</div>` : ''}
       </div>`
     })
 
     if (tripState.stops.length >= 2) {
-      h += `<h2 style="margin-top: 40px;">Routes</h2>`
+      h += `<h2>Routes</h2>`
       for (let i = 0; i < tripState.stops.length - 1; i++) {
         const from = tripState.stops[i], to = tripState.stops[i + 1]
         const url = `https://www.rome2rio.com/map/${encodeURIComponent(from.destination.searchName)}/${encodeURIComponent(to.destination.searchName)}`
@@ -341,8 +469,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
       }
     }
 
-    h += `<hr style="margin-top: 40px;"><p style="color: #666; font-size: 12px;">Generated by Luxury Travel Planner</p></body></html>`
-
+    h += `</body></html>`
     printWindow.document.write(h)
     printWindow.document.close()
     printWindow.print()
@@ -353,11 +480,18 @@ export const showLuxuryTravel = function showLuxuryTravel() {
   // ============================================================================
 
   let panelExpanded = tripState.stops.length > 0
-  let activeTab = 'destinations' // 'destinations' | 'hotels' | 'custom'
+  let activeTab = 'custom'
   let customDestInput = ''
   let customHotelName = ''
   let customHotelLocation = ''
-  let hotelAssignStopId = null // which stop we're assigning a hotel to
+  let hotelAssignStopId = null
+
+  // Live data states
+  let liveHotels = []
+  let liveHotelsLoading = false
+  let liveHotelsError = null
+  let liveRoutes = new Map() // routeKey -> { routes, loading, error }
+  let expandedRoute = null // which route is expanded
 
   function togglePanel() {
     panelExpanded = !panelExpanded
@@ -366,17 +500,74 @@ export const showLuxuryTravel = function showLuxuryTravel() {
 
   function setTab(tab) {
     activeTab = tab
+    // Load live hotels when switching to hotels tab with a destination selected
+    if (tab === 'hotels' && hotelAssignStopId) {
+      const stop = tripState.stops.find(s => s.id === hotelAssignStopId)
+      if (stop) {
+        loadLiveHotels(stop.destination.name.split(',')[0].trim())
+      }
+    }
     rerender()
   }
 
   function startAssignHotel(stopId) {
     hotelAssignStopId = stopId
     activeTab = 'hotels'
+    const stop = tripState.stops.find(s => s.id === stopId)
+    if (stop) {
+      loadLiveHotels(stop.destination.name.split(',')[0].trim())
+    }
     rerender()
   }
 
   function cancelAssignHotel() {
     hotelAssignStopId = null
+    liveHotels = []
+    rerender()
+  }
+
+  async function loadLiveHotels(city) {
+    liveHotelsLoading = true
+    liveHotelsError = null
+    rerender()
+
+    const result = await fetchLiveHotels(city)
+
+    liveHotelsLoading = false
+    if (result.error && result.hotels.length === 0) {
+      liveHotelsError = result.error
+    } else {
+      liveHotels = result.hotels || []
+    }
+    rerender()
+  }
+
+  async function loadRoutePreview(from, to) {
+    const key = `${from}-${to}`
+    liveRoutes.set(key, { routes: [], loading: true, error: null })
+    rerender()
+
+    const result = await fetchLiveRoutes(from, to)
+
+    liveRoutes.set(key, {
+      routes: result.routes || [],
+      loading: false,
+      error: result.error || null,
+      url: result.url
+    })
+    rerender()
+  }
+
+  function toggleRouteExpand(from, to) {
+    const key = `${from}-${to}`
+    if (expandedRoute === key) {
+      expandedRoute = null
+    } else {
+      expandedRoute = key
+      if (!liveRoutes.has(key)) {
+        loadRoutePreview(from, to)
+      }
+    }
     rerender()
   }
 
@@ -420,6 +611,9 @@ export const showLuxuryTravel = function showLuxuryTravel() {
     hotelCard: 'mt2 pa2 br2 bg-white ba b--light-gray',
     extLink: 'link dark-green underline hover-green',
     footer: 'bg-near-black near-white pa4 tc',
+    loading: 'tc pa4 gray',
+    routeCard: 'pa2 mb1 br2 bg-lightest-blue dark-blue',
+    routeExpanded: 'pa3 mb2 br2 bg-white ba b--light-blue',
   }
 
   // ============================================================================
@@ -447,7 +641,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
     `
   }
 
-  function HotelCard(hotel) {
+  function HotelCard(hotel, isLive = false) {
     const isAssigning = hotelAssignStopId !== null
     const assignTarget = isAssigning ? tripState.stops.find(s => s.id === hotelAssignStopId) : null
 
@@ -455,25 +649,77 @@ export const showLuxuryTravel = function showLuxuryTravel() {
       <div class=${S.card}>
         <div class=${S.cardInner}>
           <h4 class=${S.cardTitle}>${hotel.name}</h4>
-          <p class=${S.cardMeta}>${hotel.location} · ${hotel.source}</p>
-          <p class=${S.cardDesc}>${hotel.description}</p>
+          <p class=${S.cardMeta}>${hotel.location}${hotel.source ? ` · ${hotel.source}` : ''}${isLive ? ' · Live' : ''}</p>
+          <p class=${S.cardDesc}>${hotel.description || ''}</p>
           <div class="flex gap2 mt3">
             ${isAssigning ? html`
               <button class="${S.btn} ${S.btnPrimary}" style="flex:1" onclick=${() => {
                 setHotelForStop(hotelAssignStopId, hotel)
                 hotelAssignStopId = null
+                liveHotels = []
               }}>
                 Add to ${assignTarget?.destination.name.split(',')[0]}
               </button>
             ` : html`
-              <a href="https://www.tablethotels.com/en/search?query=${encodeURIComponent(hotel.name)}"
-                 target="_blank" rel="noopener"
-                 class="${S.btn} ${S.btnSecondary}" style="flex:1;text-align:center">
-                View on Tablet →
-              </a>
+              ${hotel.url ? html`
+                <a href=${hotel.url} target="_blank" rel="noopener"
+                   class="${S.btn} ${S.btnSecondary}" style="flex:1;text-align:center">
+                  View on Tablet →
+                </a>
+              ` : ''}
             `}
           </div>
         </div>
+      </div>
+    `
+  }
+
+  function RoutePreview(from, to) {
+    const key = `${from}-${to}`
+    const routeData = liveRoutes.get(key)
+    const isExpanded = expandedRoute === key
+    const r2rUrl = `https://www.rome2rio.com/map/${encodeURIComponent(from)}/${encodeURIComponent(to)}`
+
+    return html`
+      <div class="mb2">
+        <button
+          class="db w-100 pa2 br2 bg-lightest-blue dark-blue tl bn pointer hover-bg-light-blue"
+          onclick=${() => toggleRouteExpand(from, to)}
+        >
+          <span class="fw6">${from.split(',')[0]}</span>
+          <span class="mh1">→</span>
+          <span class="fw6">${to.split(',')[0]}</span>
+          <span class="fr">${isExpanded ? '▼' : '▶'}</span>
+        </button>
+
+        ${isExpanded ? html`
+          <div class=${S.routeExpanded}>
+            ${routeData?.loading ? html`
+              <div class=${S.loading}>Loading routes...</div>
+            ` : routeData?.routes?.length > 0 ? html`
+              <div class="mb2">
+                ${routeData.routes.slice(0, 4).map(route => html`
+                  <div class="flex items-center justify-between pv2 bb b--light-gray">
+                    <div>
+                      <span class="mr2">${route.emoji || ''}</span>
+                      <span class="fw5">${route.name}</span>
+                    </div>
+                    <div class="f7 gray">
+                      ${route.durationText || ''}
+                      ${route.price ? html`<span class="ml2 fw6">~$${route.price.amount}</span>` : ''}
+                    </div>
+                  </div>
+                `)}
+              </div>
+            ` : html`
+              <p class="f6 gray">Click below to see route options.</p>
+            `}
+            <a href=${r2rUrl} target="_blank" rel="noopener"
+               class="dib pa2 br2 bg-dark-blue near-white no-underline fw6 dim f7">
+              Open in Rome2Rio →
+            </a>
+          </div>
+        ` : ''}
       </div>
     `
   }
@@ -482,7 +728,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
     return html`
       <div class="pa4 br3 bg-white shadow-1 mb4">
         <h3 class="f4 fw6 dark-green mb3">Add Custom Destination</h3>
-        <p class="f6 gray mb3">Enter any city, landmark, or region. We'll generate Rome2Rio routes automatically.</p>
+        <p class="f6 gray mb3">Enter any city, landmark, or region. Routes are generated automatically.</p>
         <div class="flex gap2">
           <input
             type="text"
@@ -515,7 +761,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
         </div>
 
         <h3 class="f4 fw6 dark-green mb3 mt4">Add Custom Hotel</h3>
-        <p class="f6 gray mb3">Add any hotel — or <a class=${S.extLink} href="https://www.tablethotels.com/" target="_blank">search Tablet Hotels</a> first.</p>
+        <p class="f6 gray mb3">Add any hotel, or click "+ Add Hotel" on a stop for live Tablet search.</p>
         <div class="flex flex-wrap gap2">
           <input
             type="text"
@@ -570,7 +816,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
       return html`
         <button class=${S.panelToggle} onclick=${togglePanel}>
           <span class="f5 mr2">🧳</span>
-          <span class="fw6">Trip${stopCount > 0 ? ` (${stopCount} stop${stopCount > 1 ? 's' : ''})` : ''}</span>
+          <span class="fw6">Trip${stopCount > 0 ? ` (${stopCount})` : ''}</span>
         </button>
       `
     }
@@ -597,13 +843,6 @@ export const showLuxuryTravel = function showLuxuryTravel() {
             </div>
           ` : ''}
 
-          ${hotelAssignStopId ? html`
-            <div class="pa3 mb3 br2 bg-washed-yellow">
-              <p class="f6 fw6 mb2">Select a hotel for: ${tripState.stops.find(s => s.id === hotelAssignStopId)?.destination.name}</p>
-              <button class="${S.btnSmall} bg-near-white" onclick=${cancelAssignHotel}>Cancel</button>
-            </div>
-          ` : ''}
-
           ${tripState.stops.map((stop, idx) => html`
             <div class=${S.stop}>
               <div class=${S.stopHeader}>
@@ -611,7 +850,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
                   <span class=${S.stopNum}>${idx + 1}</span>
                   <div>
                     <div class="fw6">${stop.destination.name}</div>
-                    ${stop.destination.isCustom ? html`<span class="f7 gray">Custom</span>` : html`<span class="f7 gray">${stop.destination.source}</span>`}
+                    <span class="f7 gray">${stop.destination.source || 'Custom'}</span>
                   </div>
                 </div>
                 <div class=${S.stopActions}>
@@ -639,7 +878,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
                 </div>
               ` : html`
                 <button class="${S.btnSmall} ${S.btnSecondary} mt2" onclick=${() => startAssignHotel(stop.id)}>
-                  + Add Hotel
+                  + Add Hotel (Live Search)
                 </button>
               `}
             </div>
@@ -647,17 +886,10 @@ export const showLuxuryTravel = function showLuxuryTravel() {
 
           ${tripState.stops.length >= 2 ? html`
             <div class="mt3 mb3">
-              <h4 class="f6 ttu tracked gray mb2">Routes</h4>
+              <h4 class="f6 ttu tracked gray mb2">Routes (click to preview)</h4>
               ${tripState.stops.slice(0, -1).map((stop, idx) => {
                 const next = tripState.stops[idx + 1]
-                const url = `https://www.rome2rio.com/map/${encodeURIComponent(stop.destination.searchName)}/${encodeURIComponent(next.destination.searchName)}`
-                return html`
-                  <a href=${url} target="_blank" rel="noopener"
-                     class="db pa2 mb1 br2 bg-lightest-blue dark-blue no-underline hover-bg-light-blue f7">
-                    ${stop.destination.name.split(',')[0]} → ${next.destination.name.split(',')[0]}
-                    <span class="fr">Rome2Rio ↗</span>
-                  </a>
-                `
+                return RoutePreview(stop.destination.searchName, next.destination.searchName)
               })}
             </div>
           ` : ''}
@@ -667,6 +899,7 @@ export const showLuxuryTravel = function showLuxuryTravel() {
               <div class="flex gap2 mb2">
                 <button class="${S.btnSmall} bg-dark-green near-white flex-grow-1" onclick=${exportAsText}>📋 Copy</button>
                 <button class="${S.btnSmall} bg-navy near-white flex-grow-1" onclick=${printItinerary}>🖨 Print</button>
+                <button class="${S.btnSmall} bg-purple near-white flex-grow-1" onclick=${handleShare}>🔗 Share</button>
               </div>
               <button class="${S.btnSmall} bg-near-white dark-red w-100" onclick=${clearTrip}>Clear Trip</button>
             </div>
@@ -685,8 +918,10 @@ export const showLuxuryTravel = function showLuxuryTravel() {
 <style>
   @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   @keyframes slideDown { from { transform: translateY(0); opacity: 1; } to { transform: translateY(100%); opacity: 0; } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   .gap2 { gap: 0.5rem; }
   .gap3 { gap: 1rem; }
+  .animate-pulse { animation: pulse 1.5s infinite; }
 </style>
 
 <custom-header/>
@@ -695,14 +930,13 @@ export const showLuxuryTravel = function showLuxuryTravel() {
 <section class=${S.hero}>
   <div class="tc pa4">
     <h1 class=${S.heroTitle}>Luxury Travel Planner</h1>
-    <p class=${S.heroSub}>Build your dream itinerary. Add any destination, any hotel from Tablet, with Rome2Rio routes generated automatically.</p>
+    <p class=${S.heroSub}>Live hotel search from Tablet Hotels. Route previews from Rome2Rio. Shareable itineraries.</p>
   </div>
 </section>
 
 <main class=${S.main}>
 <section class=${S.section}>
 
-  <!-- Tabs -->
   <div class=${S.tabs}>
     <button class=${activeTab === 'custom' ? S.tabActive : S.tab} onclick=${() => setTab('custom')}>✨ Custom Entry</button>
     <button class=${activeTab === 'destinations' ? S.tabActive : S.tab} onclick=${() => setTab('destinations')}>Destinations</button>
@@ -717,10 +951,8 @@ export const showLuxuryTravel = function showLuxuryTravel() {
     </div>
   ` : ''}
 
-  <!-- Custom Entry Tab -->
   ${activeTab === 'custom' ? CustomEntrySection() : ''}
 
-  <!-- Destinations Tab -->
   ${activeTab === 'destinations' ? html`
     <div class="mb4">
       <h3 class="f4 fw6 dark-green mb3">Condé Nast Traveler Picks</h3>
@@ -731,7 +963,6 @@ export const showLuxuryTravel = function showLuxuryTravel() {
     </div>
   ` : ''}
 
-  <!-- Hotels Tab -->
   ${activeTab === 'hotels' ? (() => {
     const assigningStop = hotelAssignStopId ? tripState.stops.find(s => s.id === hotelAssignStopId) : null
     const searchCity = assigningStop ? assigningStop.destination.name.split(',')[0].trim() : ''
@@ -739,11 +970,10 @@ export const showLuxuryTravel = function showLuxuryTravel() {
       ? `https://www.tablethotels.com/en/search?query=${encodeURIComponent(searchCity)}`
       : 'https://www.tablethotels.com/'
 
-    // Filter curated hotels to show matches first when assigning
-    const matchingHotels = assigningStop
+    const matchingCurated = assigningStop
       ? curatedHotels.filter(h => h.location.toLowerCase().includes(searchCity.toLowerCase()))
       : []
-    const otherHotels = assigningStop
+    const otherCurated = assigningStop
       ? curatedHotels.filter(h => !h.location.toLowerCase().includes(searchCity.toLowerCase()))
       : curatedHotels
 
@@ -752,7 +982,13 @@ export const showLuxuryTravel = function showLuxuryTravel() {
       ${assigningStop ? html`
         <div class="pa3 mb4 br2 bg-washed-yellow">
           <p class="f5 fw6 mb2">Finding hotels in ${searchCity}</p>
-          <p class="f6 gray mb3">Select from curated options below or search Tablet Hotels directly.</p>
+          ${liveHotelsLoading ? html`
+            <p class="f6 gray animate-pulse">Searching Tablet Hotels...</p>
+          ` : liveHotels.length > 0 ? html`
+            <p class="f6 gray mb2">Found ${liveHotels.length} hotels from Tablet</p>
+          ` : html`
+            <p class="f6 gray mb2">Select from options below or search Tablet directly.</p>
+          `}
           <div class="flex gap2 flex-wrap">
             <a href=${tabletSearchUrl} target="_blank" rel="noopener"
                class="dib pa2 ph3 br2 bg-dark-blue near-white no-underline fw6 dim f6">
@@ -761,45 +997,68 @@ export const showLuxuryTravel = function showLuxuryTravel() {
             <button class="${S.btnSmall} bg-near-white" onclick=${cancelAssignHotel}>Cancel</button>
           </div>
         </div>
+
+        ${liveHotels.length > 0 ? html`
+          <h3 class="f4 fw6 dark-green mb3">Live Results from Tablet Hotels</h3>
+          <div class=${S.grid}>
+            ${liveHotels.map(h => HotelCard(h, true))}
+          </div>
+        ` : ''}
+
+        ${matchingCurated.length > 0 ? html`
+          <h3 class="f4 fw6 dark-green mb3 mt4">Curated Hotels in ${searchCity}</h3>
+          <div class=${S.grid}>
+            ${matchingCurated.map(h => HotelCard(h))}
+          </div>
+        ` : ''}
+
+        ${otherCurated.length > 0 ? html`
+          <h3 class="f4 fw6 gray mb3 mt4">Other Curated Hotels</h3>
+          <div class=${S.grid}>
+            ${otherCurated.map(h => HotelCard(h))}
+          </div>
+        ` : ''}
       ` : html`
         <div class="pa4 br3 bg-lightest-blue mb4">
-          <h3 class="f4 fw6 dark-blue mb2">Search Tablet Hotels</h3>
-          <p class="f6 gray mb3">Find any boutique or luxury hotel on Tablet's curated platform.</p>
+          <h3 class="f4 fw6 dark-blue mb2">Live Hotel Search</h3>
+          <p class="f6 gray mb3">Click "+ Add Hotel" on any stop in your trip to search Tablet Hotels for that destination.</p>
           <a href="https://www.tablethotels.com/" target="_blank" rel="noopener"
              class="dib pa3 br2 bg-dark-blue near-white no-underline fw6 dim">
-            Open Tablet Hotels →
+            Browse Tablet Hotels →
           </a>
+        </div>
+
+        <h3 class="f4 fw6 dark-green mb3">Curated Collection</h3>
+        <div class=${S.grid}>
+          ${curatedHotels.map(h => HotelCard(h))}
         </div>
       `}
 
-      ${matchingHotels.length > 0 ? html`
-        <h3 class="f4 fw6 dark-green mb3">Hotels in ${searchCity}</h3>
-        <div class=${S.grid}>
-          ${matchingHotels.map(h => HotelCard(h))}
-        </div>
-        <h3 class="f4 fw6 gray mb3 mt4">Other Curated Hotels</h3>
-      ` : html`
-        <h3 class="f4 fw6 dark-green mb3">${assigningStop ? 'Curated Hotels' : 'Curated Collection'}</h3>
-      `}
-      <div class=${S.grid}>
-        ${otherHotels.map(h => HotelCard(h))}
-      </div>
       <p class="f7 gray i mt3">Source: <a class=${S.extLink} href="https://www.tablethotels.com/" target="_blank">Tablet Hotels</a></p>
     </div>
   `})() : ''}
 
 </section>
 
-<!-- Rome2Rio Explainer -->
 <section class="pa3 pa5-ns mw9 center">
   <div class="pa4 br3 bg-white shadow-1">
-    <h3 class="f3 fw6 dark-green mb3">Automatic Route Planning</h3>
-    <p class="f5 lh-copy measure mb4">Add 2+ stops and we'll generate Rome2Rio links for each leg. Compare flights, trains, buses, and ferries.</p>
+    <h3 class="f3 fw6 dark-green mb3">Powered by Live Data</h3>
     <div class="flex flex-wrap">
-      <div class="w-25-ns w-50 pa2 tc"><div class="f2 fw7 dark-green">240+</div><div class="f7 gray">Countries</div></div>
-      <div class="w-25-ns w-50 pa2 tc"><div class="f2 fw7 dark-green">200K</div><div class="f7 gray">Train Lines</div></div>
-      <div class="w-25-ns w-50 pa2 tc"><div class="f2 fw7 dark-green">970K</div><div class="f7 gray">Bus Routes</div></div>
-      <div class="w-25-ns w-50 pa2 tc"><div class="f2 fw7 dark-green">53K</div><div class="f7 gray">Flight Paths</div></div>
+      <div class="w-third-ns w-100 pa3 tc">
+        <div class="f2 mb2">🏨</div>
+        <h4 class="f5 fw6 mb2">Live Hotel Search</h4>
+        <p class="f6 gray">Real-time results from Tablet Hotels for any destination</p>
+      </div>
+      <div class="w-third-ns w-100 pa3 tc">
+        <div class="f2 mb2">🗺️</div>
+        <h4 class="f5 fw6 mb2">Route Previews</h4>
+        <p class="f6 gray">See transport options and durations from Rome2Rio</p>
+      </div>
+      <div class="w-third-ns w-100 pa3 tc">
+        <div class="f2 mb2">🔗</div>
+        <h4 class="f5 fw6 mb2">Shareable Trips</h4>
+        <p class="f6 gray">Share your itinerary with a link that never expires</p>
+      </div>
     </div>
   </div>
 </section>
@@ -817,5 +1076,7 @@ ${TripPanel()}
 `)
   }
 
+  // Initialize
   renderPage()
+  checkForSharedTrip()
 }
