@@ -732,31 +732,61 @@ export const showLuxuryTravel = function showLuxuryTravel() {
   ` : ''}
 
   <!-- Hotels Tab -->
-  ${activeTab === 'hotels' ? html`
+  ${activeTab === 'hotels' ? (() => {
+    const assigningStop = hotelAssignStopId ? tripState.stops.find(s => s.id === hotelAssignStopId) : null
+    const searchCity = assigningStop ? assigningStop.destination.name.split(',')[0].trim() : ''
+    const tabletSearchUrl = searchCity
+      ? `https://www.tablethotels.com/en/search?query=${encodeURIComponent(searchCity)}`
+      : 'https://www.tablethotels.com/'
+
+    // Filter curated hotels to show matches first when assigning
+    const matchingHotels = assigningStop
+      ? curatedHotels.filter(h => h.location.toLowerCase().includes(searchCity.toLowerCase()))
+      : []
+    const otherHotels = assigningStop
+      ? curatedHotels.filter(h => !h.location.toLowerCase().includes(searchCity.toLowerCase()))
+      : curatedHotels
+
+    return html`
     <div class="mb4">
-      ${hotelAssignStopId ? html`
-        <div class="pa3 mb4 br2 bg-washed-yellow flex items-center justify-between">
-          <p class="f6 ma0">Select a hotel for: <strong>${tripState.stops.find(s => s.id === hotelAssignStopId)?.destination.name}</strong></p>
-          <button class="${S.btnSmall} bg-near-white" onclick=${cancelAssignHotel}>Cancel</button>
+      ${assigningStop ? html`
+        <div class="pa3 mb4 br2 bg-washed-yellow">
+          <p class="f5 fw6 mb2">Finding hotels in ${searchCity}</p>
+          <p class="f6 gray mb3">Select from curated options below or search Tablet Hotels directly.</p>
+          <div class="flex gap2 flex-wrap">
+            <a href=${tabletSearchUrl} target="_blank" rel="noopener"
+               class="dib pa2 ph3 br2 bg-dark-blue near-white no-underline fw6 dim f6">
+              Search "${searchCity}" on Tablet →
+            </a>
+            <button class="${S.btnSmall} bg-near-white" onclick=${cancelAssignHotel}>Cancel</button>
+          </div>
         </div>
-      ` : ''}
+      ` : html`
+        <div class="pa4 br3 bg-lightest-blue mb4">
+          <h3 class="f4 fw6 dark-blue mb2">Search Tablet Hotels</h3>
+          <p class="f6 gray mb3">Find any boutique or luxury hotel on Tablet's curated platform.</p>
+          <a href="https://www.tablethotels.com/" target="_blank" rel="noopener"
+             class="dib pa3 br2 bg-dark-blue near-white no-underline fw6 dim">
+            Open Tablet Hotels →
+          </a>
+        </div>
+      `}
 
-      <div class="pa4 br3 bg-lightest-blue mb4">
-        <h3 class="f4 fw6 dark-blue mb2">Search Tablet Hotels</h3>
-        <p class="f6 gray mb3">Find any boutique or luxury hotel on Tablet's curated platform.</p>
-        <a href="https://www.tablethotels.com/" target="_blank" rel="noopener"
-           class="dib pa3 br2 bg-dark-blue near-white no-underline fw6 dim">
-          Open Tablet Hotels →
-        </a>
-      </div>
-
-      <h3 class="f4 fw6 dark-green mb3">Curated Collection</h3>
+      ${matchingHotels.length > 0 ? html`
+        <h3 class="f4 fw6 dark-green mb3">Hotels in ${searchCity}</h3>
+        <div class=${S.grid}>
+          ${matchingHotels.map(h => HotelCard(h))}
+        </div>
+        <h3 class="f4 fw6 gray mb3 mt4">Other Curated Hotels</h3>
+      ` : html`
+        <h3 class="f4 fw6 dark-green mb3">${assigningStop ? 'Curated Hotels' : 'Curated Collection'}</h3>
+      `}
       <div class=${S.grid}>
-        ${curatedHotels.map(h => HotelCard(h))}
+        ${otherHotels.map(h => HotelCard(h))}
       </div>
       <p class="f7 gray i mt3">Source: <a class=${S.extLink} href="https://www.tablethotels.com/" target="_blank">Tablet Hotels</a></p>
     </div>
-  ` : ''}
+  `})() : ''}
 
 </section>
 
